@@ -1,53 +1,80 @@
+require('dotenv').config()
 const venom = require('venom-bot');
 const fs = require('fs');
 const fetch = require("node-fetch");
 const admin = require('firebase-admin');
-const serviceAccount = require('./service-account.json');
+// const serviceAccount = JSON.parse(process.env.FIREBASE_TOKEN)
+
 
 // Initalize Firebase
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-  databaseURL: "https://lineadelavivienda-axey-default-rtdb.firebaseio.com/",
-  storageBucket: 'gs://lineadelavivienda-axey.appspot.com'
-});
-const bucket = admin.storage().bucket();
+// admin.initializeApp({
+//   credential: admin.credential.cert(serviceAccount),
+//   databaseURL: "https://lineadelavivienda-axey-default-rtdb.firebaseio.com/",
+//   storageBucket: 'gs://lineadelavivienda-axey.appspot.com'
+// });
+// const bucket = admin.storage().bucket();
+
+// Get token from env variable
+const sessionToken = JSON.parse(process.env.WA_TOKEN)
 
 venom
-  .create()
+  .create(    //session
+    'Session', //Pass the name of the client you want to start the bot
+    //catchQR
+    (base64Qrimg, asciiQR, attempts, urlCode) => {
+      console.log('Number of attempts to read the qrcode: ', attempts);
+      console.log('Terminal qrcode: ', asciiQR);
+      console.log('base64 image string qrcode: ', base64Qrimg);
+      console.log('urlCode (data-ref): ', urlCode);
+    },
+    // statusFind
+    (statusSession, session) => {
+    },
+    // options
+    {},
+    // BrowserSessionToken
+    sessionToken)
   .then((client) => start(client))
   .catch((erro) => {
     console.log(erro);
   });
 
-function start(client) {
+async function start(client) {
+  const sessionToken = await client.getSessionTokenBrowser();
   client.onMessage(async (message) => {
     console.log(message);
-    // Handle text message
-    // Call Dialogflow API proxy
-    let headersList = {
-      "Accept": "*/*",
-      "Content-Type": "application/json"
-    };
-    let body = {
-      "sessionId": message.from.toString(),
-      "queryInput": {
-        "text": {
-          "text": message.body,
-          "languageCode": "es-MX"
-        }
-      }
-    };
-    body = JSON.stringify(body);
-    let response = await fetch("http://localhost:5001/lineadelavivienda-axey/us-central1/dialogflowGateway", {
-      method: "POST",
-      body: body,
-      headers: headersList
-    });
-    let data = await response.json();
-    // Send message if there is one.
-    if (data.fulfillmentText) {
-      client.sendText(message.from, data.fulfillmentText)
+
+    if (message.body == "Hola.") {
+      client.sendText(message.from, "Hola hola.")
     }
+
+    // // Handle text message
+    // // Call Dialogflow API proxy
+    // let headersList = {
+    //   "Accept": "*/*",
+    //   "Content-Type": "application/json"
+    // };
+    // let body = {
+    //   "sessionId": message.from.toString(),
+    //   "queryInput": {
+    //     "text": {
+    //       "text": message.body,
+    //       "languageCode": "es-MX"
+    //     }
+    //   }
+    // };
+    // body = JSON.stringify(body);
+    // let response = await fetch("http://localhost:5001/lineadelavivienda-axey/us-central1/dialogflowGateway", {
+    //   method: "POST",
+    //   body: body,
+    //   headers: headersList
+    // });
+    // let data = await response.json();
+    // // Send message if there is one.
+    // if (data.fulfillmentText) {
+    //   client.sendText(message.from, data.fulfillmentText)
+    // }
+
     // // Send voicenote if there is one.
     // const voicenoteUrl = data.webhookPayload.fields.null.structValue.fields.voicenoteUrl.stringValue;
     // if (voicenoteUrl) {

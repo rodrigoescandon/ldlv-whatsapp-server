@@ -2,3 +2,4 @@ node_modules/
 tokens
 package-lock.json
 service-account.json
+.env
