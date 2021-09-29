@@ -31,7 +31,9 @@ venom
     (statusSession, session) => {
     },
     // options
-    {},
+    {
+      puppeteerOptions: { args: ['--no-sandbox'] },
+    },
     // BrowserSessionToken
     sessionToken)
   .then((client) => start(client))
