@@ -1,31 +1,42 @@
 require('dotenv').config()
-const venom = require('venom-bot');
-const fs = require('fs');
-const fetch = require("node-fetch");
-const admin = require('firebase-admin');
+const venom = require('venom-bot')
+const fs = require('fs')
+const mime = require('mime-types');
+const fetch = require("node-fetch")
+// const admin = require('firebase-admin')
+const apiUrl = process.env.API_URL
 // const serviceAccount = JSON.parse(process.env.FIREBASE_TOKEN)
 
+// Init Sanity client
+const sanityClient = require('@sanity/client')
+const thisSanityClient = sanityClient({
+  projectId: 'vkbgitwu',
+  dataset: 'production',
+  apiVersion: '2021-09-12',
+  token: process.env.SANITY_WRITE_TOKEN,
+  useCdn: false,
+})
 
 // Initalize Firebase
 // admin.initializeApp({
 //   credential: admin.credential.cert(serviceAccount),
 //   databaseURL: "https://lineadelavivienda-axey-default-rtdb.firebaseio.com/",
 //   storageBucket: 'gs://lineadelavivienda-axey.appspot.com'
-// });
-// const bucket = admin.storage().bucket();
+// })
+// const bucket = admin.storage().bucket()
 
 // Get token from env variable
 const sessionToken = JSON.parse(process.env.WA_TOKEN)
 
 venom
-  .create(    //session
-    'Session', //Pass the name of the client you want to start the bot
+  .create(
+    'Session',
     //catchQR
     (base64Qrimg, asciiQR, attempts, urlCode) => {
-      console.log('Number of attempts to read the qrcode: ', attempts);
-      console.log('Terminal qrcode: ', asciiQR);
-      console.log('base64 image string qrcode: ', base64Qrimg);
-      console.log('urlCode (data-ref): ', urlCode);
+      console.log('Number of attempts to read the qrcode: ', attempts)
+      console.log('Terminal qrcode: ', asciiQR)
+      console.log('base64 image string qrcode: ', base64Qrimg)
+      console.log('urlCode (data-ref): ', urlCode)
     },
     // statusFind
     (statusSession, session) => {
@@ -36,61 +47,85 @@ venom
     sessionToken)
   .then((client) => start(client))
   .catch((erro) => {
-    console.log(erro);
-  });
+    console.log(erro)
+  })
 
 async function start(client) {
-  const sessionToken = await client.getSessionTokenBrowser();
   client.onMessage(async (message) => {
-    console.log(message);
+    console.log(message)
 
-    if (message.body == "Hola.") {
-      client.sendText(message.from, "Hola hola.")
+    // Handle voice note
+    if (message.type === 'ptt') {
+      // Get person by session ID
+      let person = await thisSanityClient.fetch(`*[_type == "person" && whatsappId == "${message.from}"]`)
+      person = person[0]
+      console.log(person)
+      // Descrypt voicenote
+      const buffer = await client.decryptFile(message)
+      // Upload voicenote
+      const asset = await thisSanityClient.assets.upload('file', buffer, { filename: `voice-${message.from}-${Date.now()}.ogg` });
+      //destructure the voice ID from document object
+      const { _id } = asset;
+      thisSanityClient.create({
+        _type: 'story',
+        person: {
+          _type: 'reference',
+          _ref: person._id,
+        },
+        public: false,
+        publishedAt: new Date().toISOString(),
+        recording: {
+          asset: {
+            _type: 'reference',
+            _ref: _id,
+          }
+        },
+      })
     }
 
-    // // Handle text message
-    // // Call Dialogflow API proxy
-    // let headersList = {
-    //   "Accept": "*/*",
-    //   "Content-Type": "application/json"
-    // };
-    // let body = {
-    //   "sessionId": message.from.toString(),
-    //   "queryInput": {
-    //     "text": {
-    //       "text": message.body,
-    //       "languageCode": "es-MX"
-    //     }
-    //   }
-    // };
-    // body = JSON.stringify(body);
-    // let response = await fetch("http://localhost:5001/lineadelavivienda-axey/us-central1/dialogflowGateway", {
-    //   method: "POST",
-    //   body: body,
-    //   headers: headersList
-    // });
-    // let data = await response.json();
-    // // Send message if there is one.
-    // if (data.fulfillmentText) {
-    //   client.sendText(message.from, data.fulfillmentText)
-    // }
+    // Handle text message
+    // Call Dialogflow API proxy
+    let headersList = {
+      "Accept": "*/*",
+      "Content-Type": "application/json"
+    }
+    let body = {
+      "sessionId": message.from,
+      "queryInput": {
+        "text": {
+          "text": message.body,
+          "languageCode": "es-MX"
+        }
+      }
+    }
+    body = JSON.stringify(body)
+    let response = await fetch(apiUrl, {
+      method: "POST",
+      body: body,
+      headers: headersList
+    })
+    let data = await response.json()
+    // Send message if there is one.
+    if (data.fulfillmentText) {
+      client.sendText(message.from, data.fulfillmentText)
+    }
 
     // // Send voicenote if there is one.
-    // const voicenoteUrl = data.webhookPayload.fields.null.structValue.fields.voicenoteUrl.stringValue;
+    // const voicenoteUrl = data.webhookPayload.fields.null.structValue.fields.voicenoteUrl.stringValue
     // if (voicenoteUrl) {
-    //   bot.sendVoice(chatId, voicenoteUrl);
+    //   bot.sendVoice(chatId, voicenoteUrl)
     // }
     // if (message.body === 'Hi' && message.isGroupMsg === false) {
     //   client
     //     .sendText(message.from, 'Welcome Venom 🕷')
     //     .then((result) => {
-    //       console.log('Result: ', result); //return object success
+    //       console.log('Result: ', result) //return object success
     //     })
     //     .catch((erro) => {
-    //       console.error('Error when sending: ', erro); //return object error
-    //     });
+    //       console.error('Error when sending: ', erro) //return object error
+    //     })
     // }
-  });
+  })
 
   // From https://github.com/orkestral/venom#misc
   // function to detect conflits and change status
@@ -109,32 +144,32 @@ async function start(client) {
   // UNPAIRED
   // UNPAIRED_IDLE
   client.onStateChange((state) => {
-    console.log('State changed: ', state);
+    console.log('State changed: ', state)
     // force whatsapp take over
-    if ('CONFLICT'.includes(state)) client.useHere();
+    if ('CONFLICT'.includes(state)) client.useHere()
     // detect disconnect on whatsapp
-    if ('UNPAIRED'.includes(state)) console.log('logout');
-  });
+    if ('UNPAIRED'.includes(state)) console.log('logout')
+  })
 
   // DISCONNECTED
   // SYNCING
   // RESUMING
   // CONNECTED
-  let time = 0;
+  let time = 0
   client.onStreamChange((state) => {
-    console.log('State Connection Stream: ' + state);
-    clearTimeout(time);
+    console.log('State Connection Stream: ' + state)
+    clearTimeout(time)
     if (state === 'DISCONNECTED' || state === 'SYNCING') {
       time = setTimeout(() => {
-        client.close();
-      }, 80000);
+        client.close()
+      }, 80000)
     }
-  });
+  })
 
   // function to detect incoming call
   client.onIncomingCall(async (call) => {
-    console.log(call);
-    client.sendText(call.peerJid, "Sorry, I still can't answer calls");
-  });
+    console.log(call)
+    client.sendText(call.peerJid, "Sorry, I still can't answer calls")
+  })
 
 }
