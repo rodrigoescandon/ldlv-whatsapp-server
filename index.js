@@ -7,6 +7,8 @@ const fetch = require("node-fetch")
 const apiUrl = process.env.API_URL
 // const serviceAccount = JSON.parse(process.env.FIREBASE_TOKEN)
 
+const { nanoid } = require('nanoid')
+
 // Init Sanity client
 const sanityClient = require('@sanity/client')
 const thisSanityClient = sanityClient({
@@ -52,35 +54,40 @@ venom
 
 async function start(client) {
   client.onMessage(async (message) => {
-    console.log(message)
+    // console.log(message)
 
     // Handle voice note
     if (message.type === 'ptt') {
       // Get person by session ID
-      let person = await thisSanityClient.fetch(`*[_type == "person" && whatsappId == "${message.from}"]`)
-      person = person[0]
-      console.log(person)
+      const persons = await thisSanityClient.fetch(`*[_type == "person" && whatsappId == "${message.from}"]`)
+      const person = persons[0]
+      console.log(person);
       // Descrypt voicenote
       const buffer = await client.decryptFile(message)
       // Upload voicenote
-      const asset = await thisSanityClient.assets.upload('file', buffer, { filename: `voice-${message.from}-${Date.now()}.ogg` });
-      //destructure the voice ID from document object
-      const { _id } = asset;
-      thisSanityClient.create({
+      const recording = await thisSanityClient.assets.upload('file', buffer, { filename: `voice-${message.from}-${Date.now()}.ogg` });
+      // Create story with voicenote
+      const story = await thisSanityClient.create({
         _type: 'story',
-        person: {
-          _type: 'reference',
-          _ref: person._id,
-        },
         public: false,
         publishedAt: new Date().toISOString(),
         recording: {
           asset: {
             _type: 'reference',
-            _ref: _id,
+            _ref: recording._id,
           }
-        },
+        }
       })
+      // Add to person
+      thisSanityClient
+        .patch(person._id)
+        .setIfMissing({ stories: [] })
+        .append('stories', [{
+          _key: nanoid(),
+          _type: 'reference',
+          _ref: story._id,
+        }])
+        .commit()
     }
 
     // Handle text message
