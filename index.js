@@ -156,7 +156,7 @@ async function start(client) {
         client.sendText(message.from, response.fulfillmentText)
       }
       // Handle voice note response from Dialogflow
-      if (response.webhookPayload.fields.null.structValue.fields.voiceNoteUrl) {
+      if (response.webhookPayload) {
         const voiceNoteUrl = response.webhookPayload.fields.null.structValue.fields.voiceNoteUrl.stringValue
         console.log(voiceNoteUrl);
         client.sendVoice(message.from, voiceNoteUrl)
