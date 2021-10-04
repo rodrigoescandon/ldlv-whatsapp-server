@@ -3,14 +3,12 @@ const venom = require('venom-bot')
 const fs = require('fs')
 const mime = require('mime-types');
 const fetch = require("node-fetch")
-// const admin = require('firebase-admin')
 const apiUrl = process.env.API_URL
-// const serviceAccount = JSON.parse(process.env.FIREBASE_TOKEN)
-
+const sanityClient = require('@sanity/client')
 const { nanoid } = require('nanoid')
+var ffmpeg = require('fluent-ffmpeg');
 
 // Init Sanity client
-const sanityClient = require('@sanity/client')
 const thisSanityClient = sanityClient({
   projectId: 'vkbgitwu',
   dataset: 'production',
@@ -19,16 +17,51 @@ const thisSanityClient = sanityClient({
   useCdn: false,
 })
 
-// Initalize Firebase
-// admin.initializeApp({
-//   credential: admin.credential.cert(serviceAccount),
-//   databaseURL: "https://lineadelavivienda-axey-default-rtdb.firebaseio.com/",
-//   storageBucket: 'gs://lineadelavivienda-axey.appspot.com'
-// })
-// const bucket = admin.storage().bucket()
-
-// Get token from env variable
+// Get Venom WhatsApp token from env variable
 const sessionToken = JSON.parse(process.env.WA_TOKEN)
+
+const sendTextToDialogflow = async (message) => {
+  let body = {
+    "sessionId": message.from,
+    "queryInput": {
+      "text": {
+        "text": message.body,
+        "languageCode": "es-MX"
+      }
+    }
+  }
+  return await callDialogflow(body)
+}
+
+const sendEventToDialogflow = async (message, event) => {
+  let body = {
+    "sessionId": message.from,
+    "queryInput": {
+      "event": {
+        "name": event,
+        "languageCode": "es-MX"
+      }
+    }
+  }
+  return await callDialogflow(body)
+}
+
+const callDialogflow = async (body) => {
+  // Receives an object with the body to send to Dialogflow
+  // Returns an object with the response
+  bodyJson = JSON.stringify(body)
+  // Call Dialogflow API proxy
+  const response = await fetch(apiUrl, {
+    method: "POST",
+    body: bodyJson,
+    headers: {
+      "Accept": "*/*",
+      "Content-Type": "application/json"
+    }
+  })
+  const responseJson = await response.json()
+  return responseJson;
+}
 
 venom
   .create(
@@ -55,17 +88,35 @@ venom
 async function start(client) {
   client.onMessage(async (message) => {
     // console.log(message)
-
+    // console.log("Mensaje recibido")
     // Handle voice note
     if (message.type === 'ptt') {
       // Get person by session ID
       const persons = await thisSanityClient.fetch(`*[_type == "person" && whatsappId == "${message.from}"]`)
       const person = persons[0]
-      console.log(person);
-      // Descrypt voicenote
-      const buffer = await client.decryptFile(message)
+      // Decrypt and save voicenote
+      const buffer = await client.decryptFile(message);
+      // Write it into a file
+      const fileName = `voice-${Date.now()}.${mime.extension(message.mimetype)}`;
+      fs.writeFile(`temp/${fileName}`, buffer, (err) => {
+      });
+      // Convert to mp3 using ffmpeg Promise
+      await new Promise((resolve, reject) => {
+        ffmpeg(`temp/${fileName}`)
+          // set audio codec
+          .audioCodec('libmp3lame')
+          // set number of audio channels
+          .audioChannels(2)
+          // set output format to force
+          .format('mp3')
+          .on('end', () => {
+            resolve();
+          })
+          .save(`temp/${fileName}.mp3`);
+      });
       // Upload voicenote
-      const recording = await thisSanityClient.assets.upload('file', buffer, { filename: `voice-${message.from}-${Date.now()}.ogg` });
+      const recording = await thisSanityClient.assets.upload('file', fs.createReadStream(`temp/${fileName}.mp3`), { filename: `${fileName}.mp3` });
+
       // Create story with voicenote
       const story = await thisSanityClient.create({
         _type: 'story',
@@ -88,34 +139,30 @@ async function start(client) {
           _ref: story._id,
         }])
         .commit()
-    }
 
-    // Handle text message
-    // Call Dialogflow API proxy
-    let headersList = {
-      "Accept": "*/*",
-      "Content-Type": "application/json"
-    }
-    let body = {
-      "sessionId": message.from,
-      "queryInput": {
-        "text": {
-          "text": message.body,
-          "languageCode": "es-MX"
-        }
+      // Send event to DF
+      const response = await sendEventToDialogflow(message, "WHATSAPP_send_voice_note")
+      // Handle text response from Dialogflow
+      if (response.fulfillmentText) {
+        client.sendText(message.from, response.fulfillmentText)
+      }
+
+    } else {
+      // If message is text
+      // Send message to DF
+      const response = await sendTextToDialogflow(message)
+      // Handle text response from Dialogflow
+      if (response.fulfillmentText) {
+        client.sendText(message.from, response.fulfillmentText)
+      }
+      // Handle voice note response from Dialogflow
+      if (response.webhookPayload.fields.null.structValue.fields.voiceNoteUrl) {
+        const voiceNoteUrl = response.webhookPayload.fields.null.structValue.fields.voiceNoteUrl.stringValue
+        console.log(voiceNoteUrl);
+        client.sendVoice(message.from, voiceNoteUrl)
       }
     }
-    body = JSON.stringify(body)
-    let response = await fetch(apiUrl, {
-      method: "POST",
-      body: body,
-      headers: headersList
-    })
-    let data = await response.json()
-    // Send message if there is one.
-    if (data.fulfillmentText) {
-      client.sendText(message.from, data.fulfillmentText)
-    }
+
 
     // // Send voicenote if there is one.
     // const voicenoteUrl = data.webhookPayload.fields.null.structValue.fields.voicenoteUrl.stringValue

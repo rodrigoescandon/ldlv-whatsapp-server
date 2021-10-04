@@ -3,3 +3,5 @@ tokens
 package-lock.json
 service-account.json
 .env
+temp
+.DS_Store
