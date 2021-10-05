@@ -69,9 +69,7 @@ venom
     //catchQR
     (base64Qrimg, asciiQR, attempts, urlCode) => {
       console.log('Number of attempts to read the qrcode: ', attempts)
-      console.log('Terminal qrcode: ', asciiQR)
-      console.log('base64 image string qrcode: ', base64Qrimg)
-      console.log('urlCode (data-ref): ', urlCode)
+      console.log('Terminal qrcode: \n', asciiQR)
     },
     // statusFind
     (statusSession, session) => {
@@ -88,7 +86,7 @@ venom
 async function start(client) {
   client.onMessage(async (message) => {
     // console.log(message)
-    // console.log("Mensaje recibido")
+    console.log("Mensaje recibido")
     // Handle voice note
     if (message.type === 'ptt') {
       // Get person by session ID
@@ -144,6 +142,7 @@ async function start(client) {
       const response = await sendEventToDialogflow(message, "WHATSAPP_send_voice_note")
       // Handle text response from Dialogflow
       if (response.fulfillmentText) {
+        console.log("Mensaje enviado")
         client.sendText(message.from, response.fulfillmentText)
       }
 
@@ -153,12 +152,14 @@ async function start(client) {
       const response = await sendTextToDialogflow(message)
       // Handle text response from Dialogflow
       if (response.fulfillmentText) {
+        console.log("Mensaje enviado")
         client.sendText(message.from, response.fulfillmentText)
       }
       // Handle voice note response from Dialogflow
       if (response.webhookPayload) {
         const voiceNoteUrl = response.webhookPayload.fields.null.structValue.fields.voiceNoteUrl.stringValue
         console.log(voiceNoteUrl);
+        console.log("Mensaje de voz enviado")
         client.sendVoice(message.from, voiceNoteUrl)
       }
     }
