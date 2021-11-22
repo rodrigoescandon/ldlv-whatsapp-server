@@ -1,4 +1,3 @@
-require('dotenv').config()
 const venom = require('venom-bot');
 
 venom
