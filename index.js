@@ -18,7 +18,7 @@ const thisSanityClient = sanityClient({
 })
 
 // Get Venom WhatsApp token from env variable
-const sessionToken = JSON.parse(process.env.WA_TOKEN)
+// const sessionToken = JSON.parse(process.env.WA_TOKEN)
 
 const sendTextToDialogflow = async (message) => {
   let body = {
@@ -64,20 +64,7 @@ const callDialogflow = async (body) => {
 }
 
 venom
-  .create(
-    'Session',
-    //catchQR
-    (base64Qrimg, asciiQR, attempts, urlCode) => {
-      console.log('Number of attempts to read the qrcode: ', attempts)
-      console.log('Terminal qrcode: \n', asciiQR)
-    },
-    // statusFind
-    (statusSession, session) => {
-    },
-    // options
-    {},
-    // BrowserSessionToken
-    sessionToken)
+  .create()
   .then((client) => start(client))
   .catch((erro) => {
     console.log(erro)
