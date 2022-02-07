@@ -72,83 +72,87 @@ venom
 
 async function start(client) {
   client.onMessage(async (message) => {
-    // console.log(message)
-    console.log("Mensaje recibido")
-    // Handle voice note
-    if (message.type === 'ptt') {
-      // Get person by session ID
-      const persons = await thisSanityClient.fetch(`*[_type == "person" && whatsappId == "${message.from}"]`)
-      const person = persons[0]
-      // Decrypt and save voicenote
-      const buffer = await client.decryptFile(message);
-      // Write it into a file
-      const fileName = `voice-${Date.now()}.${mime.extension(message.mimetype)}`;
-      fs.writeFile(`temp/${fileName}`, buffer, (err) => {
-      });
-      // Convert to mp3 using ffmpeg Promise
-      await new Promise((resolve, reject) => {
-        ffmpeg(`temp/${fileName}`)
-          // set audio codec
-          .audioCodec('libmp3lame')
-          // set number of audio channels
-          .audioChannels(2)
-          // set output format to force
-          .format('mp3')
-          .on('end', () => {
-            resolve();
-          })
-          .save(`temp/${fileName}.mp3`);
-      });
-      // Upload voicenote
-      const recording = await thisSanityClient.assets.upload('file', fs.createReadStream(`temp/${fileName}.mp3`), { filename: `${fileName}.mp3` });
+    try {
+      // console.log(message)
+      console.log("Mensaje recibido")
+      // Handle voice note
+      if (message.type === 'ptt') {
+        // Get person by session ID
+        const persons = await thisSanityClient.fetch(`*[_type == "person" && whatsappId == "${message.from}"]`)
+        const person = persons[0]
+        // Decrypt and save voicenote
+        const buffer = await client.decryptFile(message);
+        // Write it into a file
+        const fileName = `voice-${Date.now()}.${mime.extension(message.mimetype)}`;
+        fs.writeFile(`temp/${fileName}`, buffer, (err) => {
+        });
+        // Convert to mp3 using ffmpeg Promise
+        await new Promise((resolve, reject) => {
+          ffmpeg(`temp/${fileName}`)
+            // set audio codec
+            .audioCodec('libmp3lame')
+            // set number of audio channels
+            .audioChannels(2)
+            // set output format to force
+            .format('mp3')
+            .on('end', () => {
+              resolve();
+            })
+            .save(`temp/${fileName}.mp3`);
+        });
+        // Upload voicenote
+        const recording = await thisSanityClient.assets.upload('file', fs.createReadStream(`temp/${fileName}.mp3`), { filename: `${fileName}.mp3` });
 
-      // Create story with voicenote
-      const story = await thisSanityClient.create({
-        _type: 'story',
-        public: false,
-        publishedAt: new Date().toISOString(),
-        recording: {
-          asset: {
-            _type: 'reference',
-            _ref: recording._id,
+        // Create story with voicenote
+        const story = await thisSanityClient.create({
+          _type: 'story',
+          public: false,
+          publishedAt: new Date().toISOString(),
+          recording: {
+            asset: {
+              _type: 'reference',
+              _ref: recording._id,
+            }
           }
+        })
+        // Add to person
+        thisSanityClient
+          .patch(person._id)
+          .setIfMissing({ stories: [] })
+          .append('stories', [{
+            _key: nanoid(),
+            _type: 'reference',
+            _ref: story._id,
+          }])
+          .commit()
+
+        // Send event to DF
+        const response = await sendEventToDialogflow(message, "WHATSAPP_send_voice_note")
+        // Handle text response from Dialogflow
+        if (response.fulfillmentText) {
+          console.log("Mensaje enviado")
+          client.sendText(message.from, response.fulfillmentText)
         }
-      })
-      // Add to person
-      thisSanityClient
-        .patch(person._id)
-        .setIfMissing({ stories: [] })
-        .append('stories', [{
-          _key: nanoid(),
-          _type: 'reference',
-          _ref: story._id,
-        }])
-        .commit()
 
-      // Send event to DF
-      const response = await sendEventToDialogflow(message, "WHATSAPP_send_voice_note")
-      // Handle text response from Dialogflow
-      if (response.fulfillmentText) {
-        console.log("Mensaje enviado")
-        client.sendText(message.from, response.fulfillmentText)
+      } else {
+        // If message is text
+        // Send message to DF
+        const response = await sendTextToDialogflow(message)
+        // Handle text response from Dialogflow
+        if (response.fulfillmentText) {
+          console.log("Mensaje enviado")
+          client.sendText(message.from, response.fulfillmentText)
+        }
+        // Handle voice note response from Dialogflow
+        if (response.webhookPayload) {
+          const voiceNoteUrl = response.webhookPayload.fields.null.structValue.fields.voiceNoteUrl.stringValue
+          console.log(voiceNoteUrl);
+          console.log("Mensaje de voz enviado")
+          client.sendVoice(message.from, voiceNoteUrl)
+        }
       }
-
-    } else {
-      // If message is text
-      // Send message to DF
-      const response = await sendTextToDialogflow(message)
-      // Handle text response from Dialogflow
-      if (response.fulfillmentText) {
-        console.log("Mensaje enviado")
-        client.sendText(message.from, response.fulfillmentText)
-      }
-      // Handle voice note response from Dialogflow
-      if (response.webhookPayload) {
-        const voiceNoteUrl = response.webhookPayload.fields.null.structValue.fields.voiceNoteUrl.stringValue
-        console.log(voiceNoteUrl);
-        console.log("Mensaje de voz enviado")
-        client.sendVoice(message.from, voiceNoteUrl)
-      }
+    } catch (error) {
+      console.log(error);
     }
   })
 
